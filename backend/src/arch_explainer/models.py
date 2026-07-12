@@ -7,7 +7,7 @@ downstream.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
@@ -73,8 +73,8 @@ class IngestionJob(BaseModel):
     commit_sha: str
     changes: list[FileChange] = Field(default_factory=list)
     status: str = "pending"  # pending | processing | completed | failed
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class PublicApiItem(BaseModel):
@@ -118,7 +118,7 @@ class ArchitectureDoc(BaseModel):
     overview: str
     modules: list[ModuleDoc] = Field(default_factory=list)
     diagrams: list[Diagram] = Field(default_factory=list)
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class VectorSearchResult(BaseModel):
