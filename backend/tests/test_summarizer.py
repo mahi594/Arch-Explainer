@@ -63,6 +63,19 @@ def test_mixed_root_and_subdirectory_files():
     assert set(groups.keys()) == {"root", "auth"}
 
 
+def test_deeply_nested_files_group_by_immediate_parent_not_top_level():
+    # A src/<package>/<submodule>/file.py layout should split by submodule,
+    # not collapse into one giant module named after the top-level package.
+    chunks = [
+        make_chunk("src/arch_explainer/diagram/generator.py"),
+        make_chunk("src/arch_explainer/ingest/parser.py"),
+        make_chunk("src/arch_explainer/ingest/git.py"),
+    ]
+    groups = group_chunks_into_modules(chunks)
+    assert set(groups.keys()) == {"diagram", "ingest"}
+    assert len(groups["ingest"]) == 2
+
+
 # ---- prompt building (pure string logic) ----
 
 def test_module_prompt_includes_module_name_and_files():

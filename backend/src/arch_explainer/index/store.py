@@ -80,7 +80,10 @@ class PgVectorStore:
         """Creates the extension, tables, and indexes if they don't exist.
 
         Safe to call on every startup — every statement is idempotent
-        (CREATE ... IF NOT EXISTS).
+        (CREATE ... IF NOT EXISTS). Note this means it will NOT resize an
+        existing `embeddings.vector` column if `dimensions` changes between
+        runs (e.g. switching embedding providers) — that needs a manual
+        migration: TRUNCATE the table, then ALTER COLUMN ... TYPE vector(N).
         """
         from psycopg_pool import ConnectionPool
 
@@ -89,13 +92,24 @@ class PgVectorStore:
             conn.execute(SCHEMA_SQL.format(dimensions=self.dimensions))
             conn.commit()
 
-    def store_chunks(self, chunks: list[CodeChunk], embeddings: dict[str, list[float]]) -> None:
+    def store_chunks(
+        self,
+        chunks: list[CodeChunk],
+        embeddings: dict[str, list[float]],
+        model: str,
+    ) -> None:
         """Upserts chunks and their embeddings in one transaction.
 
         `embeddings` maps chunk_id -> vector. A chunk without a matching
         embedding is stored but skipped in the embeddings table — this
         can happen if embedding a batch partially failed upstream, and
         we'd rather keep the chunk record than lose it entirely.
+
+        `model` is the name of whichever embedder actually produced these
+        vectors (e.g. `embedder.model` from index/embedder.py) — recorded
+        per-row so `embeddings.model` reflects reality instead of a fixed
+        string, since the pipeline can run against either the local
+        sentence-transformers model or Gemini.
         """
         with self._pool.connection() as conn:
             with conn.cursor() as cur:
@@ -143,7 +157,7 @@ class PgVectorStore:
                             dimensions = EXCLUDED.dimensions,
                             created_at = NOW()
                         """,
-                        (chunk.id, str(vector), "models/text-embedding-004", len(vector)),
+                        (chunk.id, str(vector), model, len(vector)),
                     )
             conn.commit()
 

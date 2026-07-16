@@ -6,14 +6,17 @@ Requires-Python: >=3.11
 Requires-Dist: pydantic>=2.6
 Requires-Dist: fastapi>=0.110
 Requires-Dist: uvicorn[standard]>=0.29
-Requires-Dist: google-generativeai>=0.5
+Requires-Dist: google-genai>=1.0
 Requires-Dist: psycopg[binary]>=3.1
+Requires-Dist: psycopg-pool>=3.2
 Requires-Dist: pgvector>=0.2.5
 Requires-Dist: gitpython>=3.1
 Requires-Dist: python-dotenv>=1.0
 Requires-Dist: pygithub>=2.3
-Requires-Dist: psycopg-pool>=3.2
+Requires-Dist: sentence-transformers>=3.0.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.1; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
 Requires-Dist: ruff>=0.4; extra == "dev"
+Provides-Extra: gemini
+Requires-Dist: google-genai>=1.0; extra == "gemini"
