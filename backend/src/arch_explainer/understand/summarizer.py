@@ -112,6 +112,13 @@ Focus on:
 1. What this module is responsible for (its purpose, not a line-by-line description)
 2. Its genuinely public surface — skip private helpers (leading underscore) unless load-bearing
 3. What it depends on, internal or external
+
+For dependencies specifically: only list something if you can actually see it
+imported or referenced in the code shown above. Do not guess or infer a
+dependency based on what a module with this name would typically need — if
+the code shown doesn't reveal enough, leave the dependency list minimal or
+empty rather than speculating. Never annotate a dependency with a guess like
+"(inferred for X)" — dependency names must be exact, bare import names only.
 """
 
 
@@ -254,7 +261,14 @@ class GeminiSummarizer:
 
     def summarize_module(self, module_name: str, chunks: list[CodeChunk]) -> ModuleDoc:
         prompt = build_module_prompt(module_name, chunks)
-        return self._generate_validated(prompt, ModuleDoc, context=f"module '{module_name}'")
+        doc = self._generate_validated(prompt, ModuleDoc, context=f"module '{module_name}'")
+        # Override whatever name the model chose (e.g. "arch_explainer.models")
+        # with the actual deterministic grouping key (e.g. "arch_explainer").
+        # Diagram generation matches modules to each other by this name, so it
+        # needs to be grounded in real repo structure, not a freeform LLM choice
+        # that can vary in phrasing between modules and break that matching.
+        doc.name = module_name
+        return doc
 
     def summarize_architecture_overview(self, repo_owner: str, repo_name: str, modules: list[ModuleDoc]) -> str:
         prompt = build_architecture_overview_prompt(repo_owner, repo_name, modules)

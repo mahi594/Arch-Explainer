@@ -24,9 +24,11 @@ import os
 import sys
 from pathlib import Path
 
-from arch_explainer.diagram.generator import generate_diagrams
+from arch_explainer.diagram.generator import generate_class_and_call_diagrams, generate_diagrams
+from arch_explainer.ingest.graph_extractor import extract_repo_graph
 from arch_explainer.ingest.parser import parse_file
-from arch_explainer.models import ArchitectureDoc, CodeChunk, RepoContext
+from arch_explainer.models import ArchitectureDoc, CodeChunk, ModuleDoc, RepoContext
+from arch_explainer.publish.render_images import MermaidCliNotAvailable, render_diagram_images
 from arch_explainer.publish.writer import write_docs_to_directory
 from arch_explainer.understand.summarizer import group_chunks_into_modules
 
@@ -60,6 +62,44 @@ def ingest_directory(repo_path: Path, files: list[Path]) -> list[CodeChunk]:
     return all_chunks
 
 
+def _module_directory(module: "ModuleDoc") -> str:
+    """Best-effort directory a module lives in, from its key_files. All of
+    a module's key_files share the same immediate parent dir (that's how
+    grouping works), so the first one's parent is enough.
+    """
+    if not module.key_files:
+        return ""
+    return Path(module.key_files[0]).parent.as_posix()
+
+
+def annotate_subpackages(modules: list["ModuleDoc"]) -> None:
+    """Appends a note to a module's description listing its immediate
+    child modules (subfolders one level below it), so a root package like
+    "arch_explainer" — grouped by the immediate-parent-dir heuristic into
+    just its own models.py — doesn't read as if index/, diagram/,
+    understand/, etc. don't exist. Purely deterministic from folder paths
+    already on each ModuleDoc; no extra LLM call needed.
+    """
+    dirs = {m.name: _module_directory(m) for m in modules}
+
+    for module in modules:
+        own_dir = dirs[module.name]
+        if not own_dir:
+            continue
+        children = [
+            other
+            for other in modules
+            if other.name != module.name
+            and dirs[other.name]
+            and dirs[other.name].startswith(own_dir + "/")
+            and "/" not in dirs[other.name][len(own_dir) + 1 :]  # immediate child only, not a deeper descendant
+        ]
+        if not children:
+            continue
+        lines = [f"- **{c.name}**: {c.description}" for c in sorted(children, key=lambda c: c.name)]
+        module.description += "\n\nThis package also contains the following subpackages:\n" + "\n".join(lines)
+
+
 def run_pipeline(
     repo_path: Path,
     owner: str,
@@ -69,6 +109,8 @@ def run_pipeline(
     summarizer,
     store,
     commit_sha: str = "local",
+    sequence_entry_points: list[str] | None = None,
+    render_images: bool = True,
     log=print,
 ) -> ArchitectureDoc:
     """Runs Ingest -> Index -> Understand -> Diagram -> Publish, in order.
@@ -76,8 +118,15 @@ def run_pipeline(
     `embedder` needs `.embed_chunks(chunks) -> list[Embedding]` and `.dimensions`.
     `summarizer` needs `.summarize_module(name, chunks) -> ModuleDoc` and
         `.summarize_architecture_overview(owner, repo, modules) -> str`.
-    `store` needs `.store_chunks(chunks, vectors_by_id)`. Pass `store=None`
+    `store` needs `.store_chunks(chunks, vectors_by_id, model)`. Pass `store=None`
         to skip storage entirely (useful for a quick doc-only dry run).
+    `sequence_entry_points` names functions/methods (e.g. "run_pipeline") to
+        generate a traced call-sequence diagram for. Defaults to just "run_pipeline"
+        itself if not given.
+    `render_images` controls whether Publish also renders each diagram's
+        Mermaid source to an actual image file via mermaid-cli — requires
+        Node/npx on PATH; if missing, this is skipped with a warning rather
+        than failing the whole run.
     """
     log("[1/6] Connect — using local path %s" % repo_path)
 
@@ -87,6 +136,13 @@ def run_pipeline(
         raise ValueError(f"No .py files found under {repo_path}")
     all_chunks = ingest_directory(repo_path, files)
     log(f"        {len(files)} files -> {len(all_chunks)} chunks")
+
+    log("        extracting class relationships and call graph...")
+    file_contents = {
+        f.relative_to(repo_path).as_posix(): f.read_text(encoding="utf-8", errors="replace") for f in files
+    }
+    classes, resolved_calls = extract_repo_graph(file_contents)
+    log(f"        {len(classes)} classes, {len(resolved_calls)} resolved call edges")
 
     log("[3/6] Index — embedding chunks...")
     embeddings = embedder.embed_chunks(all_chunks)
@@ -103,10 +159,16 @@ def run_pipeline(
     for module_name, chunks in sorted(module_groups.items()):
         log(f"        summarizing '{module_name}' ({len(chunks)} chunks)")
         modules.append(summarizer.summarize_module(module_name, chunks))
+    annotate_subpackages(modules)
     overview = summarizer.summarize_architecture_overview(owner, repo, modules)
 
     log("[5/6] Diagram — generating Mermaid diagrams...")
     diagrams = generate_diagrams(modules)
+    diagrams.extend(
+        generate_class_and_call_diagrams(
+            classes, resolved_calls, sequence_entry_points=sequence_entry_points or ["run_pipeline"]
+        )
+    )
     log(f"        {len(diagrams)} diagrams generated")
 
     log("[6/6] Publish — writing docs...")
@@ -122,6 +184,13 @@ def run_pipeline(
     written = write_docs_to_directory(doc, output_dir)
     for path in written:
         log(f"        wrote {path}")
+
+    if render_images:
+        log("        rendering diagram images (mermaid-cli)...")
+        try:
+            render_diagram_images(doc.diagrams, output_dir / "diagrams", log=log)
+        except MermaidCliNotAvailable as e:
+            log(f"        WARNING: {e}")
 
     return doc
 
@@ -146,6 +215,9 @@ def main() -> None:
         choices=["local", "gemini"],
         default=os.environ.get("EMBEDDER_PROVIDER", "local"),
         help="Embedding backend: 'local' (sentence-transformers, free, default) or 'gemini' (API, costs quota)",
+    )
+    arg_parser.add_argument(
+        "--skip-images", action="store_true", help="Skip rendering diagrams to PNG (no Node.js/npx required)"
     )
     args = arg_parser.parse_args()
 
@@ -179,6 +251,7 @@ def main() -> None:
         embedder=embedder,
         summarizer=summarizer,
         store=store,
+        render_images=not args.skip_images,
     )
 
     if store is not None:

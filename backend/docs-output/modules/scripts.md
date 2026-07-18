@@ -1,8 +1,8 @@
 # scripts
 
-**Purpose:** To provide direct, executable entry points for developers to run the full code analysis pipeline against local codebases, test pipeline components, and manage database schema changes related to vector embeddings. It serves as a demonstration of the pipeline's capabilities and a tool for operational tasks.
+**Purpose:** To provide operational and development utilities: `migrate_vector_dimensions.py` handles database schema changes for embeddings, while `run_pipeline.py` serves as the main execution entry point for the architecture explanation process, facilitating local development, testing, and demonstration of the core logic.
 
-**Description:** This module contains standalone utility scripts for the `arch_explainer` project, primarily focused on executing the core architecture explanation pipeline locally and performing database maintenance tasks.
+**Description:** This module contains utility scripts for managing the `arch_explainer` application. It includes a one-off database migration script for resizing vector embedding dimensions and the primary end-to-end pipeline runner for processing codebases and generating documentation.
 
 ## Key Files
 
@@ -19,8 +19,10 @@
 - dotenv
 - psycopg
 - arch_explainer.diagram.generator
+- arch_explainer.ingest.graph_extractor
 - arch_explainer.ingest.parser
 - arch_explainer.models
+- arch_explainer.publish.render_images
 - arch_explainer.publish.writer
 - arch_explainer.understand.summarizer
 - arch_explainer.index.embedder
@@ -33,7 +35,15 @@
 - **Signature:** `def main() -> None`
 - **File:** `scripts/migrate_vector_dimensions.py`
 
-Entry point for the `migrate_vector_dimensions.py` script. It parses command-line arguments for new vector dimensions, loads environment variables, connects to the database, truncates the `embeddings` table, and alters the `vector` column to the specified new dimensions.
+Entry point for the vector dimension migration script. It loads environment variables, validates command-line arguments for the new vector dimensions, connects to the PostgreSQL database, truncates the `embeddings` table, and alters the `vector` column to the specified new dimensions.
+
+### `EXCLUDED_DIRS`
+
+- **Type:** `variable`
+- **Signature:** `EXCLUDED_DIRS = {...}`
+- **File:** `scripts/run_pipeline.py`
+
+A set of directory names (e.g., `.git`, `__pycache__`, `node_modules`) that should be ignored when discovering Python files within a repository.
 
 ### `discover_python_files`
 
@@ -41,7 +51,7 @@ Entry point for the `migrate_vector_dimensions.py` script. It parses command-lin
 - **Signature:** `def discover_python_files(root: Path) -> list[Path]`
 - **File:** `scripts/run_pipeline.py`
 
-Recursively finds all Python files within a given root directory, excluding common development and build artifacts like `.git`, `__pycache__`, `venv`, etc.
+Recursively walks the given `root` directory to find all Python (`.py`) files, explicitly skipping common noise directories defined in `EXCLUDED_DIRS`.
 
 ### `ingest_directory`
 
@@ -49,15 +59,23 @@ Recursively finds all Python files within a given root directory, excluding comm
 - **Signature:** `def ingest_directory(repo_path: Path, files: list[Path]) -> list[CodeChunk]`
 - **File:** `scripts/run_pipeline.py`
 
-Parses a list of Python files into `CodeChunk` objects. The file paths within the `CodeChunk` objects are made relative to the provided `repo_path`.
+Parses the content of each file in the `files` list into `CodeChunk` objects. File paths within the chunks are made relative to `repo_path`.
+
+### `annotate_subpackages`
+
+- **Type:** `function`
+- **Signature:** `def annotate_subpackages(modules: list["ModuleDoc"]) -> None`
+- **File:** `scripts/run_pipeline.py`
+
+Modifies the descriptions of `ModuleDoc` objects to include a list of their immediate child modules (subpackages), based on their directory structure. This enhances the generated documentation without requiring additional LLM calls.
 
 ### `run_pipeline`
 
 - **Type:** `function`
-- **Signature:** `def run_pipeline(repo_path: Path, owner: str, repo: str, output_dir: Path, embedder, summarizer, store, commit_sha: str = "local", log=print) -> ArchitectureDoc`
+- **Signature:** `def run_pipeline(repo_path: Path, owner: str, repo: str, output_dir: Path, embedder, summarizer, store, commit_sha: str = "local", sequence_entry_points: list[str] | None = None, render_images: bool = True, log=print) -> ArchitectureDoc`
 - **File:** `scripts/run_pipeline.py`
 
-Executes the full architecture explanation pipeline (Ingest, Index, Understand, Diagram, Publish) against a local repository path. It requires already-constructed embedder, summarizer, and store objects for testability and flexibility.
+The core orchestration function that executes the entire architecture explanation pipeline: Connect, Ingest, Index, Understand, Diagram, and Publish. It takes pre-configured `embedder`, `summarizer`, and `store` objects to allow for testability and flexibility.
 
 ### `main`
 
@@ -65,4 +83,4 @@ Executes the full architecture explanation pipeline (Ingest, Index, Understand, 
 - **Signature:** `def main() -> None`
 - **File:** `scripts/run_pipeline.py`
 
-Entry point for the `run_pipeline.py` script. It parses command-line arguments for the repository path, owner, repo name, output directory, and embedding provider, then initializes the necessary components (embedder, summarizer) and calls `run_pipeline` to execute the full process.
+The command-line entry point for `run_pipeline.py`. It parses arguments such as repository path, owner, repo name, output directory, and embedding provider, then initializes necessary components and calls `run_pipeline`.

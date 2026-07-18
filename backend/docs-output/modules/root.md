@@ -1,8 +1,8 @@
 # root
 
-**Purpose:** To provide a quick and isolated way to troubleshoot database connection problems, helping engineers determine if a slow or stuck connection originates from the underlying database driver (psycopg) or the connection pooling mechanism (psycopg_pool). It is intended to be run directly, not imported as a library.
+**Purpose:** To provide a quick, isolated test environment for database connectivity. It helps engineers pinpoint whether database connection problems (e.g., slowness, timeouts, hangs) are occurring at the fundamental driver level or within the connection pooling mechanism, by testing each component separately and reporting timings.
 
-**Description:** A standalone diagnostic script for testing PostgreSQL database connectivity and identifying potential bottlenecks or issues at different layers (bare connection vs. connection pool).
+**Description:** A standalone diagnostic script designed to identify and isolate issues with database connections, specifically targeting potential hangs or slowness in either the bare `psycopg` driver or the `psycopg_pool` connection management layer.
 
 ## Key Files
 
