@@ -1,0 +1,15 @@
+
+how output is coming for the github repo main are diagrams to understand
+
+docs-output/
+├── index.md                        ← landing page: repo overview + links to everything below
+├── modules/
+│   ├── api.md, diagram.md, index.md, ... ← one per module, LLM-written summary
+├── diagrams/
+│   ├── architecture.md / .png      ← all modules + their external library deps
+│   ├── dependencies.md / .png      ← modules only, internal imports between them
+│   ├── classes_all.md / .png       ← every class in the repo, inheritance + composition
+│   ├── calls_all.md / .png         ← every resolved function/method call, whole repo
+│   ├── classes_<module>.md / .png  ← same as classes_all, filtered to one module
+│   ├── calls_<module>.md / .png    ← same as calls_all, filtered to one module
+│   └── sequence_run_pipeline.md / .png ← traced call sequence starting from run_pipeline()
